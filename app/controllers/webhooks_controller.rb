@@ -1,4 +1,7 @@
 class WebhooksController < ActionController::Base
+  # Shopify authenticates deliveries by signing the raw request body.
+  skip_forgery_protection
+
   DRAFT_TOPICS = %w[draft_orders/create draft_orders/update draft_orders/delete].freeze
 
   def create

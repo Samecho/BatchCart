@@ -2,6 +2,8 @@ require "test_helper"
 
 class WebhooksTest < ActionDispatch::IntegrationTest
   setup do
+    @forgery_protection = WebhooksController.allow_forgery_protection
+    WebhooksController.allow_forgery_protection = true
     @shop = shop("webhook-example.myshopify.com")
     Shopify::Admin.stub(:new, Shopify::Demo.new(@shop)) do
       @order = confirmed(@shop).orders.sole
@@ -11,6 +13,10 @@ class WebhooksTest < ActionDispatch::IntegrationTest
       "updatedAt" => Time.current.iso8601(6)
     }
     @order.update_remote!(@remote)
+  end
+
+  teardown do
+    WebhooksController.allow_forgery_protection = @forgery_protection
   end
 
   test "signature verification and delivery IDs are independent of draft state" do
