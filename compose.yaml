@@ -1,0 +1,64 @@
+name: batchcart
+services:
+  db:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_USER: batchcart
+      POSTGRES_PASSWORD: batchcart
+      POSTGRES_DB: batchcart
+    volumes:
+      - db:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U batchcart -d batchcart"]
+      interval: 2s
+      timeout: 3s
+      retries: 20
+  migrate:
+    build: .
+    image: batchcart:local
+    env_file:
+      - path: .env
+        required: false
+    environment: &rails_env
+      DATABASE_URL: postgres://batchcart:batchcart@db/batchcart
+    depends_on:
+      db:
+        condition: service_healthy
+    command: ["bundle", "exec", "rails", "db:prepare"]
+  web:
+    image: batchcart:local
+    pull_policy: never
+    env_file:
+      - path: .env
+        required: false
+    environment: *rails_env
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+    ports:
+      - "127.0.0.1:${BATCHCART_PORT:-3000}:3000"
+  worker:
+    image: batchcart:local
+    pull_policy: never
+    env_file:
+      - path: .env
+        required: false
+    environment: *rails_env
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+    command: ["bundle", "exec", "rake", "solid_queue:start"]
+  e2e:
+    profiles: ["test"]
+    image: mcr.microsoft.com/playwright:v1.58.2-noble
+    working_dir: /work
+    environment:
+      PLAYWRIGHT_BASE_URL: http://web:3000
+    volumes:
+      - .:/work
+      - e2e_dependencies:/work/node_modules
+    depends_on: [web, worker]
+    command: ["sh", "-ec", "npm ci && npm run test:e2e"]
+volumes:
+  db:
+  e2e_dependencies:

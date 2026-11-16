@@ -1,0 +1,12 @@
+development: &tasks
+  dispatch:
+    class: DispatchJob
+    schedule: every 15 seconds
+  reconcile:
+    class: ReconcileJob
+    schedule: every minute
+  clear_finished_jobs:
+    command: SolidQueue::Job.clear_finished_in_batches
+    schedule: every day at 4am
+
+production: *tasks

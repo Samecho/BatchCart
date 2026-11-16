@@ -1,0 +1,29 @@
+name = "BatchCart"
+client_id = "your-dev-dashboard-client-id"
+application_url = "https://batchcart.example"
+embedded = false
+
+[access_scopes]
+scopes = "read_products,read_draft_orders,write_draft_orders"
+use_legacy_install_flow = true
+
+[auth]
+redirect_urls = ["https://batchcart.example/auth/shopify/callback"]
+
+[webhooks]
+api_version = "2026-10"
+
+[[webhooks.subscriptions]]
+topics = ["draft_orders/create", "draft_orders/delete"]
+uri = "/webhooks/shopify"
+include_fields = ["id"]
+
+[[webhooks.subscriptions]]
+topics = ["draft_orders/update"]
+uri = "/webhooks/shopify"
+include_fields = ["id", "updated_at"]
+
+[[webhooks.subscriptions]]
+topics = ["app/uninstalled"]
+uri = "/webhooks/shopify"
+include_fields = ["myshopify_domain"]

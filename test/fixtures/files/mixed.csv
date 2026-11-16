@@ -1,0 +1,4 @@
+order_ref,first_name,last_name,email,address1,address2,city,province_code,country_code,zip,sku,quantity
+GIFT-101,Avery,Sample,avery@example.test,1 Sample Street,,Toronto,ON,CA,M5V 2T6,GIFT-MUG,2
+GIFT-101,Avery,Sample,avery@example.test,1 Sample Street,,Toronto,ON,CA,M5V 2T6,GIFT-NOTE,1
+GIFT-102,Jordan,Sample,jordan@example.test,2 Sample Street,,Ottawa,ON,CA,K1P 1J1,GIFT-TEE,0

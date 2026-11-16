@@ -1,0 +1,14 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <%= csrf_meta_tags %>
+    <title>BatchCart</title>
+    <link rel="stylesheet" href="/assets/batchcart.css">
+  </head>
+  <body>
+    <div id="app" data-workspace="<%= @workspace.to_json %>"></div>
+    <script type="module" src="/assets/batchcart.js"></script>
+  </body>
+</html>

@@ -1,0 +1,14 @@
+/.env
+/.env.*
+!/.env.example
+/log/*
+/tmp/*
+/node_modules/
+/public/assets/
+/test-results/
+/playwright-report/
+/.bundle/
+/vendor/bundle/
+/shopify.app.local.toml
+/.shopify/
+/.DS_Store
