@@ -1,0 +1,28 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v6
+      - name: Boot BatchCart
+        run: |
+          cp .env.example .env
+          docker compose up -d --build --wait
+      - name: Minitest
+        run: |
+          docker compose run --rm -e RAILS_ENV=test -e DATABASE_URL=postgres://batchcart:batchcart@db/batchcart_test migrate \
+            sh -ec 'bundle exec rails db:prepare && bundle exec rails test'
+      - name: Playwright
+        run: docker compose run --rm e2e
+      - name: Logs
+        if: failure()
+        run: docker compose logs --no-color --tail=120 web worker
