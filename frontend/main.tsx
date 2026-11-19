@@ -29,7 +29,7 @@ function Connect({ workspace }: { workspace: Workspace }) {
 
   return <main className="connection">
     <h1>Connect your shop</h1>
-    <p className="description">Turn a spreadsheet of recipients and SKUs into Shopify draft orders.</p>
+    {workspace.shopify_available && <p className="description">Sign in as the development store owner.</p>}
     {workspace.shopify_available && <form onSubmit={(event) => { event.preventDefault(); void connect() }}>
       <label>Shop domain <input required name="shop" placeholder="your-store.myshopify.com" value={domain}
         onChange={(event) => setDomain(event.target.value)} autoCapitalize="none" spellCheck={false} /></label>
@@ -77,7 +77,7 @@ function BatchList({ open }: { open: (batch: Batch) => void }) {
       <a className="button" href="/order-template.csv" download>Download CSV template</a>
     </div>
     <form className="upload" onSubmit={upload}>
-      <div><h2>Import orders</h2><p>Use one row per SKU. Rows with the same order reference go into one draft.</p></div>
+      <div><h2>Import orders</h2><p>Use one row per SKU. Give rows for the same order the same reference.</p></div>
       <div className="row-between upload-controls">
         <input id="order-csv" type="file" accept=".csv,text/csv" aria-label="Order CSV"
           onChange={(event) => setFile(event.target.files?.[0] ?? null)} disabled={busy} />
@@ -203,7 +203,7 @@ function BatchDetail({
         </label>
       </div>}
       <div className="row-between">
-        <p>Confirming locks this version and queues its draft orders.</p>
+        <p>This version will be locked once you create the drafts.</p>
         <button className="primary" onClick={() => action(`${path}/confirm`, {
           duplicate_references: acknowledged ? duplicates : [],
         })} disabled={busy || (duplicates.length > 0 && !acknowledged)}>

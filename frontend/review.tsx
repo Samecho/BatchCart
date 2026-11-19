@@ -14,8 +14,8 @@ const errors: Record<string, string> = {
   shopify_rejected_draft: "Shopify rejected the draft. Check the variant and addresses in Shopify.",
   shopify_permission: "Shopify denied access. Reconnect the store before retrying.",
   reconnect_shop: "Reconnect the store before retrying.",
-  draft_not_found: "Shopify has no indexed match for this order yet.",
-  ambiguous_shopify_match: "The marker could not be matched to a single draft.",
+  draft_not_found: "No matching draft found in Shopify yet.",
+  ambiguous_shopify_match: "BatchCart could not find a single draft with this order's tag.",
   shopify_transport: "The Shopify request ended without a confirmed result.",
   worker_interrupted: "The worker stopped before it could save the Shopify result.",
 }

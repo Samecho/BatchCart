@@ -1,98 +1,94 @@
 # BatchCart
 
-BatchCart turns a CSV of recipients and SKUs into Shopify draft orders. It is for cases like a school fundraiser where the organizer sends one spreadsheet and the merchant needs a separate draft for each recipient. The [Shopify community thread](https://community.shopify.com/t/can-you-use-a-customer-segment-to-create-bulk-orders/379437) describes that workflow.
+Upload a CSV with one row per product, check the grouped orders, then create the drafts in Shopify. BatchCart is built for jobs like a school fundraiser where one spreadsheet contains orders for several recipients. [Original use case on Shopify Community](https://community.shopify.com/t/can-you-use-a-customer-segment-to-create-bulk-orders/379437)
 
-## Run it locally
+![BatchCart showing two open Shopify drafts from three CSV rows](docs/shopify-batch.jpg)
 
-Docker and Compose are enough. On PowerShell, use `Copy-Item .env.example .env` in the first step.
+The screenshot is from a Shopify development store. Three CSV rows became two drafts, and the export kept one row per product with its Shopify draft ID. Shopify delivered three create events across the smoke test and batch. Editing the first draft's note delivered an update that BatchCart verified and synced. Shop isolation is covered by automated tests with two simulated shops. The delete and uninstall subscriptions were registered during the live run.
+
+## Try it locally
+
+You need Docker with Compose. From the repo root, create `.env` with `cp .env.example .env` in Bash or `Copy-Item .env.example .env` in PowerShell. Then start the containers.
 
 ```sh
-cp .env.example .env
 docker compose up -d --build
 ```
 
-Open [localhost:3000](http://localhost:3000) and choose **Open demo shop**. Upload [the mixed CSV](test/fixtures/files/mixed.csv). Record 4 has a quantity of zero. Click its record number, enter `1`, and save. The new version previews two orders, with two products on the first. Confirm, wait for the drafts to appear, and export the CSV. Import [the template](public/order-template.csv) again to see the duplicate warning.
+1. Open the app and choose **Open demo shop**. [localhost:3000](http://localhost:3000)
+2. Upload the sample with an invalid quantity in record 4. Click the record number, change the quantity to `1`, and save. [CSV with a validation error](test/fixtures/files/mixed.csv)
+3. Review the two grouped orders, click **Create 2 draft orders**, and download the results. The demo uses a seeded catalog and stores its simulated drafts in PostgreSQL. The same worker runs in both modes.
 
-The demo uses a local catalog and a PostgreSQL table for simulated Shopify drafts. The browser still goes through Rails, CSRF checks, Postgres, and a separate Solid Queue worker.
+Use the template to build your own CSV. Repeat an already confirmed import in the same shop to see the duplicate warning. [CSV template](public/order-template.csv)
 
 ## Connect a Shopify dev store
 
-1. Create a [Shopify dev store](https://shopify.dev/docs/apps/build/stores/development-stores) and an app in Dev Dashboard. Use a standalone app and configure its installation, callback and webhooks using [the example TOML](shopify.app.example.toml). If using Shopify CLI, copy it to `shopify.app.local.toml`, fill in the client ID and URLs, and deploy that configuration to your development app. App URLs and callbacks must use your public HTTPS URL.
-2. Enable the development app's protected customer data access for names, shipping addresses and email, as described in [Shopify's setup steps](https://shopify.dev/docs/apps/launch/protected-customer-data). Development access and distribution are configured in Dev Dashboard.
-3. Point an HTTPS tunnel or proxy at the local web service. Set `BATCHCART_DEMO=0`, `APP_URL`, `SHOPIFY_DEV_SHOPS` (comma-separated `.myshopify.com` domains), `SHOPIFY_CLIENT_ID`, and `SHOPIFY_CLIENT_SECRET` in `.env`. Generate two independent secrets for `SECRET_KEY_BASE` and `DATA_ENCRYPTION_KEY` with `openssl rand -hex 64` or `docker run --rm ruby:3.4-slim ruby -rsecurerandom -e 'puts SecureRandom.hex(64)'`. Keep them stable across restarts and share the same values with the web and worker processes.
-4. Restart the project with `docker compose up -d`. Add products with SKUs `GIFT-MUG`, `GIFT-TEE`, and `GIFT-NOTE` to the dev store. Open the HTTPS app URL and connect as the store owner. Upload only synthetic recipient data. For a first check, upload the header and first data row from the template to create one draft; use the full template to exercise the batch flow.
-5. Open the draft from the results table and verify the products, quantities and shipping address in Shopify Admin. Edit the draft in Shopify and check the activity history after the sync job runs.
+1. Create a dev store and a standalone app in Dev Dashboard. Use the scopes and callback in the example TOML. Set the app URL to an HTTPS origin that forwards to BatchCart. [Shopify dev stores](https://shopify.dev/docs/apps/build/stores/development-stores) · [Example configuration](shopify.app.example.toml)
+2. Enable protected customer data access for names, email and shipping addresses on the development app. Register the webhook subscriptions from the example TOML. With Shopify CLI you can copy the file to `shopify.app.local.toml`, set your app's client ID and URLs, and deploy it to the development app. [Protected customer data setup](https://shopify.dev/docs/apps/launch/protected-customer-data)
+3. In `.env`, set `BATCHCART_DEMO=0`, `APP_URL`, `SHOPIFY_CLIENT_ID`, `SHOPIFY_CLIENT_SECRET`, and `SHOPIFY_DEV_SHOPS` (comma-separated `.myshopify.com` domains). Run `openssl rand -hex 64` twice to generate separate values for `SECRET_KEY_BASE` and `DATA_ENCRYPTION_KEY`. With Docker, you can also use `docker run --rm ruby:3.4-slim ruby -rsecurerandom -e 'puts SecureRandom.hex(64)'`. Use the same pair in both web and worker containers and keep it across restarts.
+4. Run `docker compose up -d` and open the HTTPS app URL. Sign in as the store owner. Replace the template SKUs with ones from your dev store, or create products with the template SKUs. Use synthetic recipients and leave the resulting drafts open.
+5. Open a draft from the results table to check the products, quantities and shipping address in Shopify Admin. Edit its note to exercise the update webhook.
 
-Shopify authenticates the merchant via the authorization code grant. The online grant checks the store owner. The offline grant supplies a renewable token for the worker. Tokens and imported recipient fields are encrypted in Postgres. The API is pinned to `2026-10` and requests product reads plus draft-order reads and writes. [Shopify's standalone authentication guide](https://shopify.dev/docs/apps/build/authentication-authorization/authenticate-standalone-apps)
+The online OAuth grant checks the store owner. The offline grant gives the worker a renewable token. BatchCart encrypts tokens and imported recipient details in PostgreSQL and uses Shopify Admin GraphQL `2026-10`. [Shopify's standalone app authentication guide](https://shopify.dev/docs/apps/build/authentication-authorization/authenticate-standalone-apps)
 
-## How it works
+## What happens after confirmation
 
 ```mermaid
 flowchart LR
     UI[React workspace] --> Rails[Rails controllers]
     Rails --> DB[(PostgreSQL)]
-    Rails -->|variant lookup| Shopify[Shopify Admin GraphQL]
+    Rails -->|Look up variants| Shopify[Shopify Admin GraphQL]
     DB --> Worker[Solid Queue worker]
-    Worker -->|create and reconcile drafts| Shopify
-    Worker -->|results and audit| DB
-    Shopify -->|signed webhooks| Rails
+    Worker -->|Create and check drafts| Shopify
+    Worker -->|Store results| DB
+    Shopify -->|Signed webhooks| Rails
 ```
 
-Each order reference can have multiple SKU records with the same recipient. Validation resolves exact SKUs to variant IDs. A missing SKU, multiple exact variants, or two lines for the same SKU prevents confirmation of the entire batch. CSV records are numbered from 2 after the header. The template uses UTF-8, and each upload can contain up to 1,500 records or 1 MB.
-
-The preview is a versioned snapshot. An edit creates a successor, and the database protects the stored contents. The confirmation transaction locks the shop and recomputes duplicate fingerprints. The fingerprint uses normalized recipient details and variant IDs with quantities, so changing the CSV reference or row order will still warn about the same shipment. A merchant can acknowledge the exact list of flagged order references.
+Rows with the same order reference must have the same recipient. Missing or ambiguous SKUs and repeated SKUs within an order block confirmation. Uploads must be UTF-8 and fit within 1,500 records and 1 MB. Fixing a row creates a new version. Confirming locks that version and checks for duplicates using the recipient details, variant IDs and quantities. Renaming an order reference or sorting the CSV still finds the same match.
 
 ```mermaid
 stateDiagram-v2
-    [*] --> pending: confirmed
-    pending --> running: worker claims
+    [*] --> pending: Confirm batch
+    pending --> running: Claim order
     running --> succeeded: Shopify returns a draft
-    running --> pending: safe deferral
-    running --> failed: explicit rejection or backoff exhausted
-    running --> review: no reliable response or lost worker
-    failed --> pending: merchant retries
-    review --> succeeded: exactly one marker match
-    review --> closed: merchant closes unresolved
+    running --> pending: Back off and retry
+    running --> failed: Shopify rejects the request or retries run out
+    running --> review: Result is unknown
+    failed --> pending: Merchant retries
+    review --> succeeded: One matching draft found
+    review --> closed: Merchant closes item
 ```
 
-The worker commits the claim before contacting Shopify. A PostgreSQL advisory lock serializes API work for a shop, while different shops can proceed independently. The scheduler scans for eligible work every 15 seconds, including confirmations committed just before a queue handoff failed. Pause blocks future claims. An in-flight request can finish.
+The worker records each claim before calling Shopify. A PostgreSQL advisory lock limits API work to one worker at a time per shop. The dispatcher scans for pending work every 15 seconds, so a confirmed batch can resume after a missed queue handoff. Pause stops new claims while the current request finishes.
 
-Shopify receives a unique `bc-…` tag on each draft. A timeout or a stale claim goes to **Needs reconciliation**, where BatchCart searches Shopify with that tag. A missing or ambiguous match stays in review. The merchant can ask for another lookup or close the item after investigating it. A late result and a delayed Shopify search index are both possible, so closing a review item records the decision without retrying the mutation. There is no cross-system exactly-once guarantee.
+Shopify may create a draft even if the request times out. BatchCart puts the order in **Needs reconciliation** and looks for its unique `bc-…` tag before recording a result. It accepts one matching draft. With no match or multiple matches, the order stays in review. A merchant can check again or close the unresolved item. Keep the tag on the Shopify draft so the lookup can find it.
 
-HTTP 429 and GraphQL throttles back off before another mutation. The worker reads Shopify's query-cost budget and shares cooldowns across the shop. Explicit validation rejections are available for retry. A permission rejection pauses the batch so the owner can reconnect before sending more work.
+On HTTP 429 or a GraphQL throttle, the worker backs off using Shopify's query-cost budget. A permissions error pauses the batch. Signed webhooks are deduplicated by delivery ID and queue a fresh GraphQL read. Periodic reads catch missed updates, and older Shopify timestamps cannot overwrite newer ones.
 
-Webhook deliveries are HMAC-verified and deduplicated by delivery ID. Draft webhooks schedule a GraphQL read instead of applying the payload's status. Sync rejects older Shopify timestamps, and periodic reads catch missed events. Batch activity and CSV results preserve the order reference and Shopify draft ID. Logs include the local batch and order IDs and Shopify's request ID when available.
+## Tests and benchmark
 
-## Tests and measurements
+With the demo containers running, use the same commands as CI.
 
 ```sh
 docker compose run --rm -e RAILS_ENV=test -e DATABASE_URL=postgres://batchcart:batchcart@db/batchcart_test migrate sh -ec 'bundle exec rails db:prepare && bundle exec rails test'
 docker compose run --rm e2e
 ```
 
-Minitest covers confirmation and duplicate submissions, concurrent work, interrupted jobs, rate limits, unknown outcomes, webhook replay, and shop isolation. Playwright runs the import, correction, confirmation and export against the demo shop. GitHub Actions runs both suites with Compose.
+Minitest exercises confirmation, duplicate submissions, concurrent work, worker interruption, rate limits, ambiguous outcomes, webhook replay and shop isolation. Playwright checks the demo from import through export. [CI runs](https://github.com/Samecho/BatchCart/actions)
 
-Run the benchmark against a fresh test database with the command below. The arguments are order count and number of trials.
+The benchmark runs the worker directly with simulated drafts. The numbers are medians of three runs on Docker Desktop with Ruby 3.4.12 and PostgreSQL 17. They include database writes and audit events. Shopify API latency, throttling and queue polling are outside these measurements.
 
-```sh
-docker compose run --rm -e RAILS_ENV=test -e DATABASE_URL=postgres://batchcart:batchcart@db/batchcart_bench migrate sh -ec 'bundle exec rails db:prepare && bundle exec rails runner script/benchmark.rb 500 3'
-```
-
-Local measurements on Docker Desktop with Ruby 3.4.12 and PostgreSQL 17. Each row is the median of three runs with one CSV record per order.
-
-| Orders | Parse, validate and save | Process and record simulated drafts |
+| Orders | Import and validate | Process simulated drafts |
 | ---: | ---: | ---: |
 | 100 | 18.2 ms | 828.3 ms |
 | 500 | 81.2 ms | 4,203.1 ms |
 | 1,500 | 211.1 ms | 12,765.1 ms |
 
-The script calls the worker directly in the Rails test environment. The times include database writes and audit events. Shopify network latency, API throttling and queue polling are outside this measurement.
+```sh
+docker compose run --rm -e RAILS_ENV=test -e DATABASE_URL=postgres://batchcart:batchcart@db/batchcart_bench migrate sh -ec 'bundle exec rails db:prepare && bundle exec rails runner script/benchmark.rb 500 3'
+```
 
 ## Deployment and limits
 
-Use the same image for the web and worker processes. Set `RAILS_ENV=production`, provide the Shopify and encryption settings above plus `DATABASE_URL`, and run `bundle exec rails db:prepare` before starting either process. Run the web behind an HTTPS reverse proxy using the hostname in `APP_URL` and run the worker with `bundle exec rake solid_queue:start`. Use a Postgres connection that preserves session-level advisory locks. The Compose password and bind address are for local development.
+Use the same image for web and worker. For production Rails settings, set `RAILS_ENV=production` and supply the Shopify settings, encryption keys and `DATABASE_URL`. Run `bundle exec rails db:prepare` before starting the processes. Put the web process behind HTTPS at the hostname in `APP_URL`. Start the worker with `bundle exec rake solid_queue:start`. The database connection must preserve session-level advisory locks. If your tunnel URL changes, update the app URL, OAuth callback and webhook destination together.
 
-- The connection flow is scoped to allowlisted development stores and store owners. A live store demo requires a Shopify dev app and dev store. App Store distribution, staff roles, and retention or erasure workflows would need separate work before accepting live customer data.
-- The CSV validates quantity, recipient consistency and basic address fields. Shopify does the final address, variant and availability checks. A SKU can change after validation, and the preview has no price or shipping quote.
-- The activity pane shows the latest 100 events. Review tags have to remain on the Shopify draft for automatic recovery.
-- Draft creation leaves payment, customer email, fulfillment and inventory reservation to the merchant.
+The app is scoped to allowlisted dev stores and store owners. App Store distribution, staff roles and customer data retention or erasure would need separate work. The preview checks SKUs, quantities and basic address fields. Shopify makes the final validation decision, and the preview omits prices and shipping quotes. The activity pane shows the latest 100 events. Merchants handle payment, email, fulfillment and inventory reservations in Shopify.

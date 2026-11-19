@@ -52,7 +52,7 @@ class WebhooksController < ActionController::Base
     end
     return unless /\Agid:\/\/shopify\/DraftOrder\/[1-9]\d{0,19}\z/.match?(gid)
 
-    # Delivery order is irrelevant. The next sync reads the current state from Shopify.
+    # Fetch the current draft on the next sync so late deliveries cannot overwrite it.
     shop.batch_orders.where(remote_id: gid, status: "succeeded").where.not(remote_status: "DELETED")
       .update_all(sync_at: Time.current)
   end
